@@ -7,6 +7,7 @@ import json
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
+from django.core.management.utils import get_random_secret_key
 
 from django.contrib.messages import constants as messages
 
@@ -26,8 +27,10 @@ VERSION = os.environ.get('VERSION', '')
 # See https://docs.djangoproject.com/en/2.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY', 'cg#p$g+j9tax!#a3cup@1$8obt2_+&k3q+pmu)5%asj6yjpkag')
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', None)
+# Default to a new random secret key at runtime if none is provided.
+if not SECRET_KEY:
+    SECRET_KEY = get_random_secret_key()
 
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 60  # User login session is 2 months
 SESSION_SAVE_EVERY_REQUEST = True
