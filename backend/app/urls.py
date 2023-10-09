@@ -7,6 +7,8 @@ from .views.fs_media.urls import media_patterns
 
 from .views import tunnelv2_views
 
+from config import settings
+
 urlpatterns = [
     path('', web_views.index, name='index'),
     path('accounts/login/', web_views.SocialAccountAwareLoginView.as_view(), name="account_login"),
@@ -63,3 +65,6 @@ urlpatterns = [
     path('mobile/auth/fetch/', mobile_views.fetch_session),
     path('mobile/auth/oauth_callback/', mobile_views.oauth_callback),
 ]
+
+if settings.DEBUG:
+    urlpatterns.append(path("__debug__/", include("debug_toolbar.urls")))
