@@ -1,9 +1,11 @@
+import urllib
 from typing import Dict, Optional, List
 import smtplib
 import logging
 import backoff  # type: ignore
 import os
 import requests
+from urllib.parse import urlparse
 
 from django.conf import settings
 from django.template.base import Template
@@ -12,6 +14,7 @@ from django.core.mail import EmailMessage
 
 from allauth.account.admin import EmailAddress  # type: ignore
 from lib import site as site
+from lib.utils import safe_path_join
 
 from notifications.handlers import handler
 from notifications.plugin import (
@@ -160,7 +163,11 @@ class EmailNotificationPlugin(BaseNotificationPlugin):
             # https://github.com/TheSpaghettiDetective/TheSpaghettiDetective/issues/43
             try:
                 if not settings.SITE_IS_PUBLIC:
-                    attachments.append(('Image.jpg', requests.get(img_url).content, 'image/jpeg'))
+                    image_relative_path = urlparse(img_url).path.replace(settings.MEDIA_URL, '', 1)
+                    image_full_path = safe_path_join(settings.MEDIA_ROOT, image_relative_path)
+                    with open(image_full_path, 'rb') as image_file:
+                        image_content = image_file.read()
+                    attachments.append(('Image.jpg', image_content, 'image/jpeg'))
                 else:
                     ctx['img_url'] = img_url
             except Exception as e:
