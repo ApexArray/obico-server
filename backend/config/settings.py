@@ -29,7 +29,7 @@ VERSION = os.environ.get('VERSION', '')
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY') or 'cg#p$g+j9tax!#a3cup@1$8obt2_+&k3q+pmu)5%asj6yjpkag'
 
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 60  # User login session is 2 months
-SESSION_SAVE_EVERY_REQUEST = True
+SESSION_SAVE_EVERY_REQUEST = False
 SESSION_COOKIE_NAME = 'tsd_sessionid'
 
 # SECURITY WARNING: don't run with debug turned on in production!
