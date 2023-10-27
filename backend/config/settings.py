@@ -4,12 +4,14 @@ import re
 import os
 import sentry_sdk
 import json
+from allauth.account.apps import AccountConfig
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.celery import CeleryIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 
 from django.contrib.messages import constants as messages
 
+setattr(AccountConfig, 'ready', lambda x: print("Ready"))
 
 def get_bool(key, default):
     if key in os.environ:
@@ -86,7 +88,6 @@ if get_bool('SOCIAL_LOGIN', False):
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'app.middleware.fix_tunnelv2_apple_cache',
     'app.middleware.TSDWhiteNoiseMiddleware',
     'django.middleware.gzip.GZipMiddleware',
     # 'nplusone.ext.django.NPlusOneMiddleware',  # Only add this if DEBUG=True
@@ -97,20 +98,22 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'app.middleware.fix_tunnelv2_apple_cache',
     'app.middleware.octoprint_tunnelv2',
     'app.middleware.check_admin_ip_whitelist',
-    'allauth.account.middleware.AccountMiddleware',
+    # 'allauth.account.middleware.AccountMiddleware',
+    'app.middleware.AccountMiddlewareAsync',
     'hijack.middleware.HijackUserMiddleware',
 ]
 
 if DEBUG:
     # Add debug toolbar
     gzip_index = MIDDLEWARE.index('django.middleware.gzip.GZipMiddleware')
-    MIDDLEWARE.insert(gzip_index+1, "debug_toolbar.middleware.DebugToolbarMiddleware")
-    INSTALLED_APPS.append("debug_toolbar")
-    import socket  # only if you haven't already imported this
-    hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
-    INTERNAL_IPS = [ip[: ip.rfind(".")] + ".1" for ip in ips] + ["127.0.0.1", "10.0.2.2"]
+    # MIDDLEWARE.insert(gzip_index+1, "debug_toolbar.middleware.DebugToolbarMiddleware")
+    # INSTALLED_APPS.append("debug_toolbar")
+    # import socket  # only if you haven't already imported this
+    # hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
+    # INTERNAL_IPS = [ip[: ip.rfind(".")] + ".1" for ip in ips] + ["127.0.0.1", "10.0.2.2"]
 
     # Add nplusone
     INSTALLED_APPS.append('nplusone.ext.django')
@@ -232,6 +235,10 @@ LOGGING = {
         # },
         'root': {
             'level': 'INFO',
+            'handlers': ['console']
+        },
+        'django.request': {
+            'level': 'DEBUG',
             'handlers': ['console']
         }
     }
