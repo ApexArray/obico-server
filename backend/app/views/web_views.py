@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import os
 from binascii import hexlify
 import re
@@ -242,16 +244,29 @@ def printer_events(request):
 ### Misc ####
 
 # Was surprised to find there is no built-in way in django to serve uploaded files in both debug and production mode
+
+# Cache jpg files with patterns like '1687207191.321624.jpg', since they will not change
+CACHEABLE_FILE_PATTERN = re.compile('^\d{10}\.\d+(_rotated)?\.jpg$')
 def serve_jpg_file(request, file_path):
     url = HmacSignedUrl(request.get_full_path())
     if not url.is_authorized():
         return HttpResponseForbidden("You do not have permission to view this media")
     full_path = os.path.join(settings.MEDIA_ROOT, file_path)
-
     if not os.path.exists(full_path):
         raise Http404("Requested file does not exist")
+    # if
+    if CACHEABLE_FILE_PATTERN.fullmatch(os.path.basename(full_path)):
+        headers = {
+            'Cache-Control': 'private, max-age=15552000'
+        }
+    else:
+        headers = {}
     with open(full_path, 'rb') as fh:
-        return HttpResponse(fh, content_type=('video/mp4' if file_path.endswith('.mp4') else 'image/jpeg'))
+        return HttpResponse(
+            fh,
+            content_type=('video/mp4' if file_path.endswith('.mp4') else 'image/jpeg'),
+            headers=headers
+        )
 
 
 # Health check that touches DB and redis
