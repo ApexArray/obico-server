@@ -48,6 +48,14 @@ def send_status_to_web(printer_id):
         }
     )
 
+async def asend_status_to_web(printer_id):
+    layer = get_channel_layer()
+    await layer.group_send(
+        web_group_name(printer_id),
+        {
+            'type': 'printer.status',         # mapped to -> printer_status in consumer
+        })
+
 def send_janus_to_web(printer_id, msg):
     layer = get_channel_layer()
     async_to_sync(layer.group_send)(

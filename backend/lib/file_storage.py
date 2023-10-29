@@ -1,3 +1,4 @@
+from asgiref.sync import async_to_sync, sync_to_async
 from datetime import datetime, timedelta
 from django.conf import settings
 import base64

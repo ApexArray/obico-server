@@ -55,6 +55,9 @@ numpy = "*"
 django-debug-toolbar = "*"
 inotify-simple = "*"
 Twisted = {extras = ["tls", "http2"], version = "*" }
+aiofiles = "*"
+httpx = "*"
+adrf = "*"
 
 [dev-packages]
 

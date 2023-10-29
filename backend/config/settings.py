@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     'simple_history',
     'widget_tweaks',
     'rest_framework',
+    'adrf',
     'jstemplate',
     'pushbullet',
     'corsheaders',

@@ -1,23 +1,26 @@
+from asgiref.sync import sync_to_async
 from datetime import datetime, timedelta
 from django.utils import timezone
 from django.db.models import Q
 import time
+from rest_framework.authentication import get_authorization_header
 from rest_framework.views import APIView
 from rest_framework.generics import CreateAPIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, AuthenticationFailed
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework import viewsets, mixins
 from rest_framework import status
 from django.conf import settings
 from django.core import serializers
 from django.core.files.uploadedfile import InMemoryUploadedFile
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ObjectDoesNotExist
 from django.http import Http404
 import requests
 import json
+import httpx
 import io
 import os
 import logging
@@ -38,9 +41,10 @@ from lib.utils import save_pic, get_rotated_pic_url
 from app.models import Printer, PrinterPrediction, OneTimeVerificationCode, PrinterEvent, GCodeFile
 from notifications.handlers import handler
 from lib.prediction import update_prediction_with_detections, is_failing, VISUALIZATION_THRESH
-from lib.channels import send_status_to_web
+from lib.channels import send_status_to_web, asend_status_to_web
 from config.celery import celery_app
 from .serializers import VerifyCodeInputSerializer, OneTimeVerificationCodeSerializer, GCodeFileSerializer
+from adrf.viewsets import APIView as AsyncAPIView
 
 from PIL import Image, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -69,18 +73,21 @@ def send_failure_alert(printer: Printer, img_url, is_warning: bool, print_paused
     )
 
 
-class OctoPrintPicView(APIView):
+class OctoPrintPicView(AsyncAPIView):
     permission_classes = (IsAuthenticated,)
     authentication_classes = (PrinterAuthentication,)
     parser_classes = (MultiPartParser,)
 
-    def post(self, request):
+    def perform_authentication(self, request):
+        pass
+
+    async def post(self, request):
         printer = request.auth
 
         if settings.PIC_POST_LIMIT_PER_MINUTE and cache.pic_post_over_limit(printer.id, settings.PIC_POST_LIMIT_PER_MINUTE):
             return Response(status=status.HTTP_429_TOO_MANY_REQUESTS)
 
-        printer.refresh_from_db()  # Connection is keep-alive, which means printer object can be stale.
+        sync_to_async(printer.refresh_from_db)  # Connection is keep-alive, which means printer object can be stale.
 
         if not request.FILES.get('pic'):
             return Response(status=status.HTTP_400_BAD_REQUEST)
@@ -91,23 +98,23 @@ class OctoPrintPicView(APIView):
         if (not printer.current_print) or request.POST.get('viewing_boost'):
             # Not need for failure detection if not printing, or the pic was send for viewing boost.
             pic_path = f'snapshots/{printer.id}/latest_unrotated.jpg'
-            internal_url, external_url = save_file_obj(pic_path, pic, settings.PICS_CONTAINER, long_term_storage=False)
+            internal_url, external_url = await sync_to_async(lambda: save_file_obj(pic_path, pic, settings.PICS_CONTAINER, long_term_storage=False))()
             cache.printer_pic_set(printer.id, {'img_url': external_url}, ex=IMG_URL_TTL_SECONDS)
-            send_status_to_web(printer.id)
+            await asend_status_to_web(printer.id)
             return Response({'result': 'ok'})
 
         pic_id = str(timezone.now().timestamp())
         pic_path = f'raw/{printer.id}/{printer.current_print.id}/{pic_id}.jpg'
         internal_url, external_url = save_file_obj(pic_path, pic, settings.PICS_CONTAINER, long_term_storage=False)
 
-        img_url_updated = self.detect_if_needed(printer, pic, pic_id, internal_url)
+        img_url_updated = await self.detect_if_needed(printer, pic, pic_id, internal_url)
         if not img_url_updated:
             cache.printer_pic_set(printer.id, {'img_url': external_url}, ex=IMG_URL_TTL_SECONDS)
 
         send_status_to_web(printer.id)
         return Response({'result': 'ok'})
 
-    def detect_if_needed(self, printer, pic, pic_id, raw_pic_url):
+    async def detect_if_needed(self, printer, pic, pic_id, raw_pic_url):
         '''
         Return:
            True: Detection was performed. img_url was updated to the tagged image
@@ -123,8 +130,10 @@ class OctoPrintPicView(APIView):
             return False
 
         cache.print_num_predictions_incr(printer.current_print.id)
+        async with httpx.AsyncClient() as client:
+            req = await client.get(settings.ML_API_HOST + '/p/', params={'img': raw_pic_url}, headers=ml_api_auth_headers())
 
-        req = requests.get(settings.ML_API_HOST + '/p/', params={'img': raw_pic_url}, headers=ml_api_auth_headers(), verify=False)
+        # req = requests.get(settings.ML_API_HOST + '/p/', params={'img': raw_pic_url}, headers=ml_api_auth_headers(), verify=False)
         req.raise_for_status()
         detections = req.json()['detections']
 
