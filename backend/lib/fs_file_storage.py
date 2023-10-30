@@ -1,3 +1,6 @@
+import asyncio
+from asgiref.sync import sync_to_async
+
 from django.conf import settings
 import os
 from os import path
@@ -7,17 +10,20 @@ from lib import site
 from lib.url_signing import new_signed_url
 
 
-def save_file_obj(dest_path, file_obj, container, content_type):
+async def save_file_obj(dest_path, file_obj, container, content_type):
     fqp = path.join(settings.MEDIA_ROOT, container, dest_path)
     if not path.exists(path.dirname(fqp)):
         os.makedirs(path.dirname(fqp))
 
-    with open(fqp, 'wb+') as dest_file:
-        copyfileobj(file_obj, dest_file)
+    # with open(fqp, 'wb+') as dest_file:
+    #     copyfileobj(file_obj, dest_file)
 
     uri = '{}{}/{}'.format(settings.MEDIA_URL, container, dest_path)
-    internal_url = new_signed_url(settings.INTERNAL_MEDIA_HOST + uri)
-    external_url = new_signed_url(site.build_full_url(uri))
+    async with asyncio.TaskGroup() as tg:
+        task1 = tg.create_task(sync_to_async(lambda: new_signed_url(settings.INTERNAL_MEDIA_HOST + uri))())
+        task2 = tg.create_task(sync_to_async(lambda: new_signed_url(site.build_full_url(uri)))())
+    internal_url = task1.result()
+    external_url = task2.result()
     return internal_url, external_url
 
 def list_dir(dir_path, container):

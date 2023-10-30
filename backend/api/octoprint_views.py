@@ -1,6 +1,6 @@
 import asyncio
 
-from asgiref.sync import sync_to_async
+from asgiref.sync import sync_to_async, async_to_sync
 from datetime import datetime, timedelta
 from django.utils import timezone
 from django.db.models import Q
@@ -115,9 +115,9 @@ class OctoPrintPicView(AsyncAPIView):
         if not request.FILES.get('pic'):
             return Response(status=status.HTTP_400_BAD_REQUEST)
 
-        async with asyncio.TaskGroup() as task_group:
-            task1 = task_group.create_task(sync_to_async(printer.refresh_from_db)())  # Connection is keep-alive, which means printer object can be stale.
-            task2 = task_group.create_task(sync_to_async(lambda: cap_image_size(request.FILES['pic']))())
+        async with asyncio.TaskGroup() as tg:
+            task1 = tg.create_task(sync_to_async(printer.refresh_from_db)())  # Connection is keep-alive, which means printer object can be stale.
+            task2 = tg.create_task(sync_to_async(lambda: cap_image_size(request.FILES['pic']))())
             await task2
             pic = task2.result()
 
@@ -125,9 +125,12 @@ class OctoPrintPicView(AsyncAPIView):
         if (not printer.current_print) or request.POST.get('viewing_boost'):
             # Not need for failure detection if not printing, or the pic was send for viewing boost.
             pic_path = f'snapshots/{printer.id}/latest_unrotated.jpg'
-            internal_url, external_url = await sync_to_async(lambda: save_file_obj(pic_path, pic, settings.PICS_CONTAINER, long_term_storage=False))()
-            cache.printer_pic_set(printer.id, {'img_url': external_url}, ex=IMG_URL_TTL_SECONDS)
-            await asend_status_to_web(printer.id)
+            internal_url, external_url = await save_file_obj(pic_path, pic, settings.PICS_CONTAINER, long_term_storage=False)
+            async with asyncio.TaskGroup() as tg:
+                task1 = tg.create_task(asend_status_to_web(printer.id))
+                task2 = tg.create_task(sync_to_async(lambda: cache.printer_pic_set(printer.id, {'img_url': external_url}, ex=IMG_URL_TTL_SECONDS))())
+            # cache.printer_pic_set(printer.id, {'img_url': external_url}, ex=IMG_URL_TTL_SECONDS)
+            # await asend_status_to_web(printer.id)
             return Response({'result': 'ok'})
 
         pic_id = str(timezone.now().timestamp())
@@ -136,9 +139,9 @@ class OctoPrintPicView(AsyncAPIView):
 
         img_url_updated = await self.detect_if_needed(printer, pic, pic_id, internal_url)
         if not img_url_updated:
-            with asyncio.TaskGroup as task_group:
-                task1 = task_group.create_task(asend_status_to_web(printer.id))
-                task2 = task_group.create_task(cache.printer_pic_set(printer.id, {'img_url': external_url}, ex=IMG_URL_TTL_SECONDS))
+            async with asyncio.TaskGroup() as tg:
+                task1 = tg.create_task(asend_status_to_web(printer.id))
+                task2 = tg.create_task(cache.printer_pic_set(printer.id, {'img_url': external_url}, ex=IMG_URL_TTL_SECONDS))
                 task1.result()
                 task2.result()
         else:
