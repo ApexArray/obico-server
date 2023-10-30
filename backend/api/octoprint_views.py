@@ -103,23 +103,21 @@ class OctoPrintPicView(AsyncAPIView):
             msg = _('Invalid token header. Token string should not contain invalid characters.')
             raise exceptions.AuthenticationFailed(msg)
 
+        if not request.FILES.get('pic'):
+            return Response(status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            printer = await Printer.objects.select_related('user').aget(auth_token=token)
+            async with asyncio.TaskGroup() as tg:
+                task2 = tg.create_task(Printer.objects.select_related('user').aget(auth_token=token))
+                task1 = tg.create_task(sync_to_async(cap_image_size)(request.FILES['pic']))
+            pic = task1.result()
+            printer = task2.result()
         except ObjectDoesNotExist:
             print("How did I get here?")
             raise AuthenticationFailed({'error': 'Invalid or Inactive Token', 'is_authenticated': False})
 
         if settings.PIC_POST_LIMIT_PER_MINUTE and cache.pic_post_over_limit(printer.id, settings.PIC_POST_LIMIT_PER_MINUTE):
             return Response(status=status.HTTP_429_TOO_MANY_REQUESTS)
-
-        if not request.FILES.get('pic'):
-            return Response(status=status.HTTP_400_BAD_REQUEST)
-
-        async with asyncio.TaskGroup() as tg:
-            task1 = tg.create_task(sync_to_async(printer.refresh_from_db)())  # Connection is keep-alive, which means printer object can be stale.
-            task2 = tg.create_task(sync_to_async(lambda: cap_image_size(request.FILES['pic']))())
-            await task2
-            pic = task2.result()
 
 
         if (not printer.current_print) or request.POST.get('viewing_boost'):
