@@ -48,7 +48,7 @@ class TSDWhiteNoiseMiddleware(WhiteNoiseMiddleware):
         else:
             static_file = self.files.get(request.path_info)
         if static_file is not None:
-            return  self.serve(static_file, request)
+            return self.serve(static_file, request)
         return await self.get_response(request)
 
 @async_only_middleware
