@@ -9,8 +9,8 @@ services:
     # Optimize performance for load testing
     environment:
       DEBUG: False
-#      DATABASE_URL: postgres://postgres:postgres@%2fvar%2frun%2fpostgresql/postgres
-      DATABASE_URL: postgres://postgres:postgres@db:5432/postgres
+      DATABASE_URL: postgres://postgres:postgres@%2fvar%2frun%2fpostgresql/postgres
+#      DATABASE_URL: postgres://postgres:postgres@db:5432/postgres
     volumes:
       - postgres_socket:/var/run/postgresql
 
@@ -43,6 +43,8 @@ services:
     restart: unless-stopped
     shm_size: 512MB
     command: -c max_connections=500
+    ports:
+      -54322:5432
     expose:
       - 5432
     environment:
