@@ -9,12 +9,13 @@ from rest_framework.authentication import get_authorization_header
 from rest_framework.views import APIView
 from rest_framework.generics import CreateAPIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.parsers import MultiPartParser
 from rest_framework.exceptions import ValidationError, AuthenticationFailed
 from rest_framework.throttling import AnonRateThrottle
-from rest_framework import viewsets, mixins
+from rest_framework import viewsets, mixins, exceptions
 from rest_framework import status
+from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from django.core import serializers
 from django.core.files.uploadedfile import InMemoryUploadedFile
@@ -76,15 +77,37 @@ def send_failure_alert(printer: Printer, img_url, is_warning: bool, print_paused
 
 
 class OctoPrintPicView(AsyncAPIView):
-    permission_classes = (IsAuthenticated,)
-    authentication_classes = (PrinterAuthentication,)
+    permission_classes = (AllowAny,)
+    # authentication_classes = (PrinterAuthentication,)
     parser_classes = (MultiPartParser,)
 
     def perform_authentication(self, request):
         pass
 
     async def post(self, request):
-        printer = request.auth
+        auth = get_authorization_header(request).split()
+
+        if not auth or auth[0].lower() != "Token".lower().encode():
+            return None
+
+        if len(auth) == 1:
+            msg = _('Invalid token header. No credentials provided.')
+            raise exceptions.AuthenticationFailed(msg)
+        elif len(auth) > 2:
+            msg = _('Invalid token header. Token string should not contain spaces.')
+            raise exceptions.AuthenticationFailed(msg)
+
+        try:
+            token = auth[1].decode()
+        except UnicodeError:
+            msg = _('Invalid token header. Token string should not contain invalid characters.')
+            raise exceptions.AuthenticationFailed(msg)
+
+        try:
+            printer = await Printer.objects.select_related('user').aget(auth_token=token)
+        except ObjectDoesNotExist:
+            print("How did I get here?")
+            raise AuthenticationFailed({'error': 'Invalid or Inactive Token', 'is_authenticated': False})
 
         if settings.PIC_POST_LIMIT_PER_MINUTE and cache.pic_post_over_limit(printer.id, settings.PIC_POST_LIMIT_PER_MINUTE):
             return Response(status=status.HTTP_429_TOO_MANY_REQUESTS)
