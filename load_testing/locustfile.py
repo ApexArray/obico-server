@@ -1,7 +1,7 @@
 import time
 import random
 
-from locust import HttpUser, events, task, run_single_user, tag, between
+from locust import HttpUser, events, task, run_single_user, tag, between, FastHttpUser
 import greenlet
 from locust.env import Environment
 
@@ -58,9 +58,10 @@ def on_test_stop(environment, **kwargs):
     print("Test has ended!")
 
 
-class PrinterUser(HttpUser):
+class PrinterUser(FastHttpUser):
     auth_token = None
     image_content = None
+
 
     def on_start(self):
         global AUTH_TOKEN
@@ -133,7 +134,7 @@ class WebUserBase(HttpUser):
         return resp_json['pic']['img_url']
 
 class WebUser(WebUserBase):
-    abstract = False
+    abstract = True
 
     @tag('web')
     @task(1)
