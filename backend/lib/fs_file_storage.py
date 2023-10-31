@@ -19,9 +19,13 @@ async def save_file_obj(dest_path, file_obj, container, content_type):
     #     copyfileobj(file_obj, dest_file)
 
     uri = '{}{}/{}'.format(settings.MEDIA_URL, container, dest_path)
-    async with asyncio.TaskGroup() as tg:
-        task1 = tg.create_task(sync_to_async(lambda: new_signed_url(settings.INTERNAL_MEDIA_HOST + uri))())
-        task2 = tg.create_task(sync_to_async(lambda: new_signed_url(site.build_full_url(uri)))())
+    try:
+        async with asyncio.timeout(5):
+            async with asyncio.TaskGroup() as tg:
+                task1 = tg.create_task(sync_to_async(lambda: new_signed_url(settings.INTERNAL_MEDIA_HOST + uri))())
+                task2 = tg.create_task(sync_to_async(lambda: new_signed_url(site.build_full_url(uri)))())
+    except TimeoutError:
+        print("Timed out!")
     internal_url = task1.result()
     external_url = task2.result()
     return internal_url, external_url

@@ -1,4 +1,6 @@
+from django.template.response import TemplateResponse
 from django.test import TestCase, override_settings
+from django.views import View
 from unittest.mock import *
 from django.utils import timezone
 from datetime import timedelta
@@ -19,6 +21,7 @@ def init_data():
     print = Print.objects.create(
         user=user, printer=printer, filename='test.gcode', started_at=timezone.now(), ext_id=1)
     printer.current_print = print
+    printer.auth_token = hexlify(os.urandom(10)).decode()
     printer.save()
     client = Client()
     client.force_login(user)
@@ -38,6 +41,47 @@ def status_msg_without_event(print_ts, filename):
         "current_print_ts": print_ts,
         "octoprint_data": {"job": {"file": {"origin": "local", "name": filename}}},
     }
+
+class BaseTestCase(TestCase):
+    def get_view(self, view: View | str, obj_id=None, is_changelist=True, **kwargs):
+        """Get view by view name"""
+        data = {'id': obj_id, **kwargs} if obj_id else {**kwargs}
+        if isinstance(view, str) and is_changelist:
+            view = f'admin:dapperadmin_{view}_changelist'
+        return self.auth_client.get(reverse(view, kwargs=data))
+
+    def assertViewQueryEquals(self, view: str, query_count: int, obj_id=None, is_changelist=True, max_time_ms=250, **kwargs) -> TemplateResponse:
+        start_time = time.perf_counter()
+        with self.assertNumQueries(query_count):
+            response = self.get_view(view, obj_id, is_changelist=is_changelist, **kwargs)
+            self.assertEqual(
+                response.status_code, 200, f"non-200 status code for {view}"
+            )
+        time_took_ms = int((time.perf_counter() - start_time) * 1000)
+        self.assertLessEqual(time_took_ms, max_time_ms, "View took too long to load")
+        return response
+
+class OctoprintTestCase(TestCase):
+    def setUp(self):
+        (self.user, self.printer, self.client) = init_data()
+        self.printer_client = Client(HTTP_AUTHORIZATION=f'Token {self.printer.auth_token}')
+
+    @patch('api.octoprint_views.send_failure_alert')
+    def test_octo_pic_upload(self, send_failure_alert):
+        with open('static_build/media/tsd-pics/snapshots/1/latest_unrotated.jpg', 'rb') as file:
+            # pic = file.read()
+            headers = {}
+            start_time = time.perf_counter()
+            with self.assertNumQueries(5):
+                response = self.printer_client.post(
+                    path='/api/v1/octo/pic/',
+                    data={'pic': file}
+                )
+            time_took_ms = int((time.perf_counter() - start_time) * 1000)
+            print(f"Completed in {time_took_ms}ms")
+            self.assertEqual(response.status_code, 200, "non-200 status code for")
+
+        print(response)
 
 @patch('api.octoprint_views.send_failure_alert')
 class AlertTestCase(TestCase):

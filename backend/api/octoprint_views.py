@@ -112,9 +112,10 @@ class OctoPrintPicView(AsyncAPIView):
                 task1 = tg.create_task(sync_to_async(cap_image_size)(request.FILES['pic']))
             pic = task1.result()
             printer = task2.result()
-        except ObjectDoesNotExist:
-            print("How did I get here?")
-            raise AuthenticationFailed({'error': 'Invalid or Inactive Token', 'is_authenticated': False})
+        except ExceptionGroup as eg:
+            if any([isinstance(e, Printer.DoesNotExist) for e in eg.exceptions]):
+                raise AuthenticationFailed({'error': 'Invalid or Inactive Token', 'is_authenticated': False})
+            raise
 
         if settings.PIC_POST_LIMIT_PER_MINUTE and cache.pic_post_over_limit(printer.id, settings.PIC_POST_LIMIT_PER_MINUTE):
             return Response(status=status.HTTP_429_TOO_MANY_REQUESTS)
@@ -133,7 +134,7 @@ class OctoPrintPicView(AsyncAPIView):
 
         pic_id = str(timezone.now().timestamp())
         pic_path = f'raw/{printer.id}/{printer.current_print.id}/{pic_id}.jpg'
-        internal_url, external_url = await sync_to_async(lambda: save_file_obj(pic_path, pic, settings.PICS_CONTAINER, long_term_storage=False))()
+        internal_url, external_url = await save_file_obj(pic_path, pic, settings.PICS_CONTAINER, long_term_storage=False)
 
         img_url_updated = await self.detect_if_needed(printer, pic, pic_id, internal_url)
         if not img_url_updated:

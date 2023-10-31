@@ -26,6 +26,7 @@ LOGGER = logging.getLogger()
 
 class TSDWhiteNoiseMiddleware(WhiteNoiseMiddleware):
     async_capable = True
+    sync_capable = False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -48,7 +49,7 @@ class TSDWhiteNoiseMiddleware(WhiteNoiseMiddleware):
         else:
             static_file = self.files.get(request.path_info)
         if static_file is not None:
-            return self.serve(static_file, request)
+            return await sync_to_async(self.serve(static_file, request))()
         return await self.get_response(request)
 
 @async_only_middleware
